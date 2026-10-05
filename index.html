@@ -1495,6 +1495,28 @@ function climateWater(t, h) {
   return c;
 }
 
+/* ---------------- village data ---------------- */
+const VILLAGE_CELL = 224, AXV = [[1, 0], [0, 1], [-1, 0], [0, -1]], AZV = [[0, 1], [-1, 0], [0, -1], [1, 0]];
+let _VK = null;
+const VKIND = new Proxy({}, { get(t, k) {
+  if (!_VK) _VK = {
+    plains: { plank: ID.planks_oak, log: ID.log_oak, floor: ID.cobblestone, stairs: ID.oak_stairs, slab: ID.oak_slab, door: ID.door_oak_block, fence: ID.fence_oak, path: ID.gravel, fill: ID.dirt, ground: ID.grass_block },
+    desert: { plank: ID.sandstone, log: ID.sandstone, floor: ID.sandstone, stairs: ID.sandstone_stairs, slab: ID.sandstone_slab, door: ID.door_birch_block, fence: ID.fence_birch, path: ID.sandstone, fill: ID.sandstone, ground: ID.sand },
+    taiga: { plank: ID.planks_spruce, log: ID.log_spruce, floor: ID.cobblestone, stairs: ID.spruce_stairs, slab: ID.spruce_slab, door: ID.door_spruce_block, fence: ID.fence_spruce, path: ID.gravel, fill: ID.dirt, ground: ID.grass_block }
+  };
+  return _VK[k];
+} });
+function lootTable(rng) {
+  const items = new Array(27).fill(null), pool = [["bread", 1, 3, 12], ["apple", 1, 3, 10], ["wheat", 2, 6, 10], ["wheat_seeds", 2, 6, 8], ["coal", 2, 6, 10], ["stick", 2, 8, 8], ["torch", 3, 8, 8], ["iron_ingot", 1, 3, 7], ["gold_ingot", 1, 2, 3], ["arrow", 3, 10, 6], ["bone", 1, 3, 4], ["string", 1, 4, 4], ["steak", 1, 3, 5], ["cooked_porkchop", 1, 3, 5], ["leather", 1, 2, 3], ["flint", 1, 3, 3], ["iron_pickaxe", 1, 1, 1.4], ["iron_sword", 1, 1, 1.4], ["diamond", 1, 1, .8], ["door_oak", 1, 1, 1.2]];
+  let total = 0; for (const e of pool) total += e[3];
+  const n = 3 + Math.floor(rng() * 4);
+  for (let k = 0; k < n; k++) {
+    let r = rng() * total, e = pool[0]; for (const q of pool) { r -= q[3]; if (r <= 0) { e = q; break; } }
+    const id = ID[e[0]]; if (id === undefined) continue; const slot = Math.floor(rng() * 27);
+    items[slot] = { id, n: e[1] + Math.floor(rng() * (e[2] - e[1] + 1)) };
+  }
+  return items;
+}
 /* ---------------- terrain generator ---------------- */
 const RW = 26, RO = 5;
 class TerrainGen {
@@ -1504,7 +1526,8 @@ class TerrainGen {
     this.nCont = new Perlin(s ^ 0x1a2b3c); this.nEro = new Perlin(s ^ 0x2b3c4d); this.nMtn = new Perlin(s ^ 0x3c4d5e); this.nRidge = new Perlin(s ^ 0x4d5e6f);
     this.nTemp = new Perlin(s ^ 0x5e6f70); this.nHum = new Perlin(s ^ 0x6f7081); this.nRiver = new Perlin(s ^ 0x708192); this.nDet = new Perlin(s ^ 0x8192a3);
     this.nC1 = new Perlin(s ^ 0x92a3b4); this.nC2 = new Perlin(s ^ 0xa3b4c5); this.nC3 = new Perlin(s ^ 0xb4c5d6); this.nC4 = new Perlin(s ^ 0xc5d6e7); this.nMisc = new Perlin(s ^ 0xd6e7f8);
-    const N = RW * RW;
+    const N = RW * RW + 1;
+    this.villages = new Map();
     this.colH = new Int16Array(N); this.colT = new Float32Array(N); this.colHu = new Float32Array(N); this.colB = new Uint8Array(N);
     this.colTop = new Uint8Array(N); this.colCont = new Float32Array(N);
     this.cheese = new Float32Array(5 * 5 * 33);
@@ -1601,7 +1624,7 @@ class TerrainGen {
         for (let y = h + 1; y <= SEA; y++) bl[col | (y << 8)] = (y === SEA && frozen) ? ID.ice : ID.water;
       }
     }
-    this.carve(c); this.ores(c); this.decorate(c);
+    this.carve(c); this.ores(c); this.decorate(c); this.structures(c);
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
       let y = WH - 1; const col = x | (z << 4);
       while (y > 0 && bl[col | (y << 8)] === 0) y--;
@@ -1708,6 +1731,150 @@ class TerrainGen {
         if (h > SEA && (this.colTop[ci] === ID.grass_block || this.colTop[ci] === ID.snowy_grass) && bl[lx | (lz << 4) | ((h + 1) << 8)] === 0) c.spawns.push([kind, ox + lx + .5, h + 1, oz + lz + .5]);
       }
     }
+  }
+  /* ---------------- villages ---------------- */
+  villagePlan(gx, gz) {
+    const key = gx + "," + gz; if (this.villages.has(key)) return this.villages.get(key);
+    let plan = null; const seed = this.seed, CELL = VILLAGE_CELL;
+    if (hash01(gx, gz, 4242, seed) < .6) {
+      const S0 = RW * RW;
+      for (let att = 0; att < 4 && !plan; att++) {
+        const vx = gx * CELL + 44 + Math.floor(hash01(gx, gz, 1 + att * 7, seed) * (CELL - 88)), vz = gz * CELL + 44 + Math.floor(hash01(gx, gz, 2 + att * 7, seed) * (CELL - 88));
+        this.column(vx, vz, S0); const h0 = this.colH[S0], b0 = this.colB[S0];
+        const okBiome = [BI.PLAINS, BI.DESERT, BI.TAIGA, BI.SNOWY_TUNDRA, BI.FOREST, BI.BIRCH_FOREST].includes(b0);
+        let flat = okBiome && h0 >= SEA + 2 && h0 <= SEA + 40;
+        for (const [dx, dz] of [[30, 0], [-30, 0], [0, 30], [0, -30], [22, 22], [-22, 22], [22, -22], [-22, -22], [46, 0], [-46, 0]]) {
+          if (!flat) break; this.column(vx + dx, vz + dz, S0); if (Math.abs(this.colH[S0] - h0) > 7 || this.colH[S0] < SEA + 1) flat = false;
+        }
+        if (flat) plan = this.makePlan(gx, gz, vx, vz, h0, b0);
+      }
+    }
+    this.villages.set(key, plan); return plan;
+  }
+  makePlan(gx, gz, vx, vz, gy, biome) {
+    const seed = this.seed, rng = mulberry32(hashI(gx, gz, 777, seed)), axisX = rng() < .5;
+    const kind = (biome === BI.DESERT) ? "desert" : (biome === BI.TAIGA || biome === BI.SNOWY_TUNDRA) ? "taiga" : "plains";
+    const U = axisX ? [1, 0] : [0, 1], V = axisX ? [0, 1] : [1, 0];
+    const P = (u, v) => [vx + u * U[0] + v * V[0], vz + u * U[1] + v * V[1]];
+    const slots = []; for (const j of [0, 1, 2]) for (const sd of [1, -1]) for (const su of [-1, 1]) slots.push({ u: su * (11 + j * 14), s: sd });
+    for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+    const n = 4 + Math.floor(rng() * 4), buildings = [], pads = [];
+    const box = (pts) => { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const [x, z] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } return [x0, z0, x1, z1]; };
+    for (let i = 0; i < n; i++) {
+      const sl = slots[i], r = rng(), type = r < .22 ? "farm" : (r < .6 ? "house5" : "house7");
+      const W = type === "farm" ? 9 : (type === "house7" ? 7 : 5), D = type === "farm" ? 7 : 5;
+      let rot; if (axisX) rot = sl.s > 0 ? 0 : 2; else rot = sl.s > 0 ? 3 : 1;
+      const AXr = AXV[rot], [cx0, cz0] = P(sl.u, sl.s * 3), ox = cx0 - Math.floor(W / 2) * AXr[0], oz = cz0 - Math.floor(W / 2) * AXr[1];
+      const corners = [[-1, -1], [W, -1], [-1, D], [W, D]].map(([lx, lz]) => [ox + lx * AXr[0] + lz * AZV[rot][0], oz + lx * AXr[1] + lz * AZV[rot][1]]);
+      const bb = box(corners); pads.push([bb[0] - 1, bb[1] - 1, bb[2] + 1, bb[3] + 1]);
+      buildings.push({ type, W, D, rot, ox, oz, seed: hashI(gx, gz, i, seed) });
+    }
+    const [sx0, sz0] = P(-46, -3), [sx1, sz1] = P(46, 3); pads.push([Math.min(sx0, sx1), Math.min(sz0, sz1), Math.max(sx0, sx1), Math.max(sz0, sz1)]);
+    const [wx0, wz0] = P(-4, -4), [wx1, wz1] = P(4, 4); pads.push([Math.min(wx0, wx1), Math.min(wz0, wz1), Math.max(wx0, wx1), Math.max(wz0, wz1)]);
+    const lamps = []; for (let u = -45; u <= 45; u += 15) { if (Math.abs(u) < 5) continue; lamps.push(P(u, 2)); lamps.push(P(u, -2)); }
+    const street = [Math.min(sx0, sx1) + 0, Math.min(sz0, sz1), Math.max(sx0, sx1), Math.max(sz0, sz1)];
+    return { vx, vz, gy, kind, axisX, buildings, pads, lamps, well: P(0, 0), U, V, street: [P(-44, -1), P(44, 1)], extent: 62 };
+  }
+  structures(c) {
+    const CELL = VILLAGE_CELL, ox = c.cx * 16, oz = c.cz * 16, R = 70;
+    const g0x = Math.floor((ox - R) / CELL), g1x = Math.floor((ox + 15 + R) / CELL), g0z = Math.floor((oz - R) / CELL), g1z = Math.floor((oz + 15 + R) / CELL);
+    for (let gx = g0x; gx <= g1x; gx++) for (let gz = g0z; gz <= g1z; gz++) {
+      const plan = this.villagePlan(gx, gz); if (!plan) continue;
+      if (plan.vx + plan.extent < ox || plan.vx - plan.extent > ox + 15 || plan.vz + plan.extent < oz || plan.vz - plan.extent > oz + 15) continue;
+      this.applyVillage(c, plan);
+    }
+  }
+  applyVillage(c, pl) {
+    const ox = c.cx * 16, oz = c.cz * 16, bl = c.blocks, gy = pl.gy, K = VKIND[pl.kind];
+    const idx = (x, y, z) => (x - ox) | ((z - oz) << 4) | (y << 8);
+    const inC = (x, z) => x >= ox && x < ox + 16 && z >= oz && z < oz + 16;
+    const put = (x, y, z, id, meta) => { if (!inC(x, z) || y < 1 || y >= WH) return; const i = idx(x, y, z); bl[i] = id; setMetaRaw(c, i, meta || 0); };
+    const inPad = (x, z) => { for (const q of pl.pads) if (x >= q[0] && x <= q[2] && z >= q[1] && z <= q[3]) return true; return false; };
+    // 1. flatten terrain to the village level
+    for (let lz = 0; lz < 16; lz++) for (let lx = 0; lx < 16; lx++) {
+      const x = ox + lx, z = oz + lz; if (!inPad(x, z)) continue;
+      const ci = (lz + RO) * RW + lx + RO, h = this.colH[ci], top = (this.colTop[ci] === ID.grass_block || this.colTop[ci] === ID.snowy_grass || this.colTop[ci] === ID.sand || this.colTop[ci] === ID.red_sand) ? this.colTop[ci] : K.ground;
+      for (let y = Math.min(WH - 1, Math.max(h, gy) + 12); y > gy; y--) bl[idx(x, y, z)] = 0;
+      for (let y = Math.max(1, Math.min(h, gy) - 1); y < gy; y++) { if (bl[idx(x, y, z)] === 0 || bl[idx(x, y, z)] === ID.water) bl[idx(x, y, z)] = K.fill; }
+      bl[idx(x, gy, z)] = (pl.kind === "desert") ? ID.sand : top;
+      if (c.meta) c.meta[idx(x, gy, z)] = 0;
+    }
+    // 2. street (3 wide) + lamp posts
+    const [s0, s1] = pl.street, sx0 = Math.min(s0[0], s1[0]), sx1 = Math.max(s0[0], s1[0]), sz0 = Math.min(s0[1], s1[1]), sz1 = Math.max(s0[1], s1[1]);
+    for (let x = sx0; x <= sx1; x++) for (let z = sz0; z <= sz1; z++) put(x, gy, z, K.path, 0);
+    for (const [lx, lz] of pl.lamps) { put(lx, gy + 1, lz, K.fence, 0); put(lx, gy + 2, lz, K.fence, 0); put(lx, gy + 3, lz, K.fence, 0); put(lx, gy + 4, lz, ID.torch, 0); }
+    // 3. well
+    const [wx, wz] = pl.well;
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      const ring = Math.max(Math.abs(dx), Math.abs(dz));
+      if (ring === 2) { put(wx + dx, gy, wz + dz, ID.cobblestone, 0); continue; }
+      if (ring === 1) { put(wx + dx, gy, wz + dz, ID.cobblestone, 0); put(wx + dx, gy + 1, wz + dz, ID.cobblestone, 0); }
+      else { put(wx, gy - 2, wz, ID.stone, 0); put(wx, gy - 1, wz, ID.water, 0); put(wx, gy, wz, ID.water, 0); put(wx, gy + 1, wz, 0, 0); }
+    }
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { put(wx + dx, gy + 2, wz + dz, K.fence, 0); put(wx + dx, gy + 3, wz + dz, K.fence, 0); }
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) put(wx + dx, gy + 4, wz + dz, K.slab, 0);
+    // 4. buildings
+    for (const b of pl.buildings) this.buildStructure(c, pl, b, put, K, inC);
+    // 5. villagers + a few animals
+    { const vr = mulberry32(hashI(pl.vx, pl.vz, 33, this.seed)), nv = 2 + Math.floor(vr() * 3);
+      for (let k = 0; k < nv; k++) { const u = Math.floor((vr() - .5) * 44), v = Math.floor(vr() * 3) - 1, x = pl.vx + u * pl.U[0] + v * pl.V[0], z = pl.vz + u * pl.U[1] + v * pl.V[1]; if (Math.abs(u) > 3 && inC(x, z)) { if (!c.spawns) c.spawns = []; c.spawns.push(["villager", x + .5, gy + 1, z + .5]); } } }
+    const rr = mulberry32(hashI(pl.vx, pl.vz, 31, this.seed));
+    for (let k = 0; k < 4; k++) {
+      const kind = ["cow", "pig", "sheep", "chicken"][Math.floor(rr() * 4)], x = pl.vx + Math.floor((rr() - .5) * 40), z = pl.vz + Math.floor((rr() - .5) * 26);
+      if (pl.kind !== "desert" && inC(x, z) && !pl.pads.slice(0, pl.buildings.length).some(q => x >= q[0] - 1 && x <= q[2] + 1 && z >= q[1] - 1 && z <= q[3] + 1)) { if (!c.spawns) c.spawns = []; c.spawns.push([kind, x + .5, gy + 1, z + .5]); }
+    }
+  }
+  buildStructure(c, pl, b, put, K, inC) {
+    const rot = b.rot, AXr = AXV[rot], AZr = AZV[rot], gy = pl.gy, W = b.W, D = b.D;
+    const wp = (lx, lz) => [b.ox + lx * AXr[0] + lz * AZr[0], b.oz + lx * AXr[1] + lz * AZr[1]];
+    const set = (lx, y, lz, id, meta) => { const [x, z] = wp(lx, lz); put(x, y, z, id, meta || 0); };
+    const wdir = v => v[0] > 0 ? 0 : (v[0] < 0 ? 1 : (v[1] > 0 ? 2 : 3));
+    const ld = d => wdir(d === 0 ? AXr : d === 1 ? [-AXr[0], -AXr[1]] : d === 2 ? AZr : [-AZr[0], -AZr[1]]);   // local dir -> world dir index
+    const rng = mulberry32(b.seed);
+    const chest = (lx, lz, front) => {
+      const [x, z] = wp(lx, lz); if (!inC(x, z)) { lootTable(rng); return; }
+      put(x, gy + 1, z, ID.chest, ld(front));
+      const k = beKey(x, gy + 1, z);
+      if (typeof blockEntities !== "undefined" && !blockEntities.has(k)) blockEntities.set(k, { type: "chest", x, y: gy + 1, z, items: lootTable(rng) });
+    };
+    if (b.type === "farm") {
+      for (let lx = 0; lx < W; lx++) for (let lz = 0; lz < D; lz++) {
+        const edge = lx === 0 || lz === 0 || lx === W - 1 || lz === D - 1;
+        if (edge) { set(lx, gy, lz, K.path, 0); continue; }
+        if (lz === 3 && lx > 0) { set(lx, gy, lz, ID.water, 0); set(lx, gy - 1, lz, ID.dirt, 0); continue; }
+        set(lx, gy, lz, ID.farmland, 0); set(lx, gy + 1, lz, ID.wheat_crop, 3 + Math.floor(rng() * 5));
+      }
+      for (const [lx, lz] of [[0, 0], [W - 1, 0], [0, D - 1], [W - 1, D - 1]]) { set(lx, gy + 1, lz, K.fence, 0); set(lx, gy + 2, lz, ID.torch, 0); }
+      return;
+    }
+    // house: clear, foundation, floor
+    for (let lx = -1; lx <= W; lx++) for (let lz = -1; lz <= D; lz++) for (let y = gy + 1; y <= gy + 9; y++) set(lx, y, lz, 0, 0);
+    for (let lx = 0; lx < W; lx++) for (let lz = 0; lz < D; lz++) { for (let y = gy - 3; y < gy; y++) set(lx, y, lz, ID.cobblestone, 0); set(lx, gy, lz, K.floor, 0); }
+    const doorX = Math.floor(W / 2);
+    for (let lx = 0; lx < W; lx++) for (let lz = 0; lz < D; lz++) {
+      if (!(lx === 0 || lz === 0 || lx === W - 1 || lz === D - 1)) continue;
+      const corner = (lx === 0 || lx === W - 1) && (lz === 0 || lz === D - 1);
+      for (let y = 1; y <= 3; y++) set(lx, gy + y, lz, corner ? K.log : K.plank, 0);
+    }
+    for (const [lx, lz] of [[0, Math.floor(D / 2)], [W - 1, Math.floor(D / 2)], [1, D - 1], [W - 2, D - 1], [doorX - 1, 0], [doorX + 1, 0]]) set(lx, gy + 2, lz, ID.glass, 0);
+    set(doorX, gy + 1, 0, 0, 0); set(doorX, gy + 2, 0, 0, 0);
+    set(doorX, gy, -1, K.path, 0);
+    const df = ld(3); set(doorX, gy + 1, 0, K.door, df); set(doorX, gy + 2, 0, K.door, df | 8);
+    // ceiling + gable roof (ridge along local x)
+    for (let lx = 0; lx < W; lx++) for (let lz = 0; lz < D; lz++) set(lx, gy + 4, lz, K.plank, 0);
+    const half = (D - 1) / 2;
+    for (let lx = -1; lx <= W; lx++) {
+      for (let k = 0; k <= half; k++) { set(lx, gy + 4 + k, -1 + k, K.stairs, ld(2)); set(lx, gy + 4 + k, D - k, K.stairs, ld(3)); }
+      set(lx, gy + 5 + half, half, K.plank, 0);
+    }
+    for (const lx of [0, W - 1]) for (let lz = 0; lz < D; lz++) { const m = Math.min(lz, D - 1 - lz); for (let y = gy + 5; y < gy + 5 + m; y++) set(lx, y, lz, K.plank, 0); }
+    // interior
+    set(W - 2, gy + 3, D - 2, ID.torch, ld(2) + 1); set(1, gy + 3, D - 2, ID.torch, ld(2) + 1);
+    set(1, gy + 1, 1, ID.crafting_table, ld(2));
+    if (b.type === "house7") { set(2, gy + 1, 1, ID.furnace, ld(2)); chest(W - 2, 1, 1); }
+    else chest(W - 2, 1, 1);
+    const bf = ld(1);
+    if (b.type === "house7" || rng() < .7) { set(3, gy + 1, D - 2, ID.bed, bf); set(2, gy + 1, D - 2, ID.bed, bf | 4); }
   }
   tree(put, def, wx, h, wz) {
     const r = hash01(wx, wz, 99, this.seed), r2 = hash01(wx, wz, 98, this.seed);
@@ -2191,8 +2358,8 @@ function initGL(canvas) {
   return true;
 }
 function resizeGL() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.floor(window.innerWidth * dpr), h = Math.floor(window.innerHeight * dpr);
+  const iw = window.innerWidth, ih = window.innerHeight, dpr = Math.max(.5, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(4.6e6 / Math.max(1, iw * ih))));   // cap the pixel count, not just the ratio
+  const w = Math.max(1, Math.floor(iw * dpr)), h = Math.max(1, Math.floor(ih * dpr));
   if (glCanvas.width !== w || glCanvas.height !== h) { glCanvas.width = w; glCanvas.height = h; }
   GLS.w = w; GLS.h = h;
 }
@@ -2607,7 +2774,7 @@ const FACE_RECT = ["px", "nx", "top", "bot", "back", "front"];   // mesher face 
 
 /* ---------- model definitions (pixels; front = -z; 1px = 1/16 block) ---------- */
 const MODELS = {};
-const SKIN_ORG = { zombie: [0, 0], skeleton: [64, 0], creeper: [128, 0], pig: [192, 0], cow: [0, 64], sheep: [64, 64], chicken: [128, 64], spider: [192, 64], player: [0, 128] };
+const SKIN_ORG = { zombie: [0, 0], skeleton: [64, 0], creeper: [128, 0], pig: [192, 0], cow: [0, 64], sheep: [64, 64], chicken: [128, 64], spider: [192, 64], player: [0, 128], villager: [64, 128] };
 function biped(kind, armW, legW, armH) {
   const aw = armW, lw = legW;
   return { kind, scale: 1, parts: [
@@ -2619,6 +2786,11 @@ function biped(kind, armW, legW, armH) {
     { n: "legL", p: [2, 12, 0], b: [-lw / 2, -12, -lw / 2, lw, 12, lw], uv: [0, 16] }] };
 }
 MODELS.zombie = biped("zombie", 4, 4); MODELS.skeleton = biped("skeleton", 2, 2); MODELS.player = biped("player", 4, 4);
+MODELS.villager = { kind: "villager", scale: 1, parts: [
+  { n: "head", p: [0, 24, 0], b: [-4, 0, -4, 8, 10, 8], uv: [0, 0] }, { n: "nose", p: [0, 24, 0], b: [-1, 3, -6, 2, 4, 2], uv: [24, 0] },
+  { n: "body", p: [0, 24, 0], b: [-4, -12, -3, 8, 12, 6], uv: [16, 20] }, { n: "robe", p: [0, 24, 0], b: [-4.5, -18, -3.5, 9, 18, 7], uv: [0, 38] },
+  { n: "arms", p: [0, 22, 0], b: [-4, -2, -5, 8, 4, 4], uv: [40, 38] }, { n: "armE1", p: [0, 22, 0], b: [-8, -2, -5, 4, 4, 4], uv: [44, 22] }, { n: "armE2", p: [0, 22, 0], b: [4, -2, -5, 4, 4, 4], uv: [44, 22] },
+  { n: "legR", p: [-2, 12, 0], b: [-2, -12, -2, 4, 12, 4], uv: [0, 22] }, { n: "legL", p: [2, 12, 0], b: [-2, -12, -2, 4, 12, 4], uv: [0, 22] }] };
 MODELS.creeper = { kind: "creeper", scale: 1, parts: [
   { n: "head", p: [0, 18, 0], b: [-4, 0, -4, 8, 8, 8], uv: [0, 0] }, { n: "body", p: [0, 18, 0], b: [-4, -12, -2, 8, 12, 4], uv: [16, 16] },
   { n: "legFR", p: [-2, 6, -2], b: [-2, -6, -2, 4, 6, 4], uv: [0, 16] }, { n: "legFL", p: [2, 6, -2], b: [-2, -6, -2, 4, 6, 4], uv: [0, 16] },
@@ -2706,6 +2878,16 @@ MODELS.spider = { kind: "spider", scale: 1, parts: (function () {
   skBox(o, [16, 16], 8, 12, 4, [0, 170, 170], .05); r = skBox(o, [40, 16], 4, 12, 4, sn, .04);
   for (const k of ["px", "nx", "front", "back"]) skRect(r[k][0], r[k][1], r[k][2], 4, [0, 170, 170], .05, 7);
   skBox(o, [0, 16], 4, 12, 4, [60, 56, 160], .05);
+// villager
+  o = SKIN_ORG.villager; const vs = [196, 146, 112], robe = [104, 78, 52];
+  r = skBox(o, [0, 0], 8, 10, 8, vs, .05); skRect(r.front[0] + 1, r.front[1] + 3, 6, 1, [62, 44, 34]);
+  for (const x of [1, 5]) { skRect(r.front[0] + x, r.front[1] + 4, 2, 1, [236, 236, 230]); skPx(r.front[0] + (x === 1 ? 2 : 5), r.front[1] + 4, [70, 128, 60]); }
+  skBox(o, [24, 0], 2, 4, 2, [176, 124, 96], .05);
+  r = skBox(o, [16, 20], 8, 12, 6, robe, .06); skRect(r.front[0], r.front[1] + 8, 8, 1, [64, 46, 30]);
+  r = skBox(o, [0, 38], 9, 18, 7, [116, 88, 58], .06); for (const k of ["front", "back", "px", "nx"]) { skRect(r[k][0], r[k][1] + 7, r[k][2], 1, [64, 46, 30]); }
+  skRect(r.front[0] + 3, r.front[1] + 7, 3, 2, [150, 120, 70]);
+  skBox(o, [40, 38], 8, 4, 4, robe, .06); skBox(o, [44, 22], 4, 4, 4, vs, .05);
+  skBox(o, [0, 22], 4, 12, 4, [92, 68, 46], .06);
 })();
 function initMobTexture() { GLS.tex.skins = makeArrayTexture(256, 256, 1, new Uint8Array(SKIN.buffer), false); }
 
@@ -2748,6 +2930,9 @@ function drawModel(kind, ex, ey, ez, bodyYaw, headYaw, headPitch, walkPhase, wal
         else if (n === "armL") { rx = anim.arms ? -1.45 - Math.sin(anim.t * 6) * .05 : sw * .8; rz = anim.arms ? -.05 : -.04; }
         if (kind === "skeleton" && anim.bow && (n === "armR" || n === "armL")) { rx = -1.5; ry = n === "armR" ? .3 : -.1; }
         break;
+      case "villager":
+        if (n === "head" || n === "nose") { ry = headYaw + (anim.shake ? Math.sin(anim.t * 22) * .5 * anim.shake : 0); rx = -headPitch; }
+        else if (n === "legR") rx = sw * .9; else if (n === "legL") rx = sw2 * .9; break;
       case "creeper": if (n === "head") { ry = headYaw; rx = -headPitch; } else if (n === "legFR" || n === "legBL") rx = sw * .9; else if (n !== "body") rx = sw2 * .9; break;
       case "pig": case "cow": case "sheep":
         if (n === "head" || n === "snout" || n.startsWith("horn")) { ry = headYaw; rx = -headPitch + (anim.graze ? .9 : 0); }
@@ -2783,13 +2968,14 @@ const MOBDEF = {
   zombie: { hw: .3, h: 1.95, hp: 20, speed: 3.0, say: "zombie", cat: "hostile", dmg: 3, burns: true, lbl: "Zombie", view: 28 },
   skeleton: { hw: .3, h: 1.95, hp: 20, speed: 2.9, say: "skeleton", cat: "hostile", dmg: 3, burns: true, lbl: "Skeleton", view: 22 },
   creeper: { hw: .3, h: 1.7, hp: 20, speed: 3.0, say: "creeper", cat: "hostile", dmg: 0, lbl: "Creeper", view: 18 },
-  spider: { hw: .7, h: .9, hp: 16, speed: 4.2, say: "spider", cat: "hostile", dmg: 2, lbl: "Spider", view: 18 }
+  spider: { hw: .7, h: .9, hp: 16, speed: 4.2, say: "spider", cat: "hostile", dmg: 2, lbl: "Spider", view: 18 },
+  villager: { hw: .3, h: 1.95, hp: 20, speed: 1.15, say: "villager", cat: "passive", lbl: "Villager" }
 };
 function spawnMob(kind, x, y, z) {
   const d = MOBDEF[kind];
   const m = { type: "mob", kind, x, y, z, vx: 0, vy: 0, vz: 0, hw: d.hw, h: d.h, stepH: .6, yaw: Math.random() * TAU, bodyYaw: 0, headYaw: 0, headPitch: 0, hp: d.hp, maxHp: d.hp,
     onGround: false, hurt: 0, deathT: 0, dead: false, walkPhase: Math.random() * 6, walkAmt: 0, aiT: rnd(0, 3), moving: false, dirX: 0, dirZ: 0, fleeT: 0, atkCD: 1, say: rnd(4, 14), fuse: 0, fireT: 0, age: 0,
-    shootCD: rnd(1, 3), strafe: Math.random() < .5 ? 1 : -1, strafeT: 0, stuckT: 0, provoked: false, graze: 0, t: 0, jumpCD: 0 };
+    homeX: x, homeZ: z, shake: 0, shootCD: rnd(1, 3), strafe: Math.random() < .5 ? 1 : -1, strafeT: 0, stuckT: 0, provoked: false, graze: 0, t: 0, jumpCD: 0 };
   m.bodyYaw = m.yaw; entities.push(m); return m;
 }
 function mobCount(cat) { let n = 0; for (const e of entities) if (e.type === "mob" && !e.dead && MOBDEF[e.kind].cat === cat) n++; return n; }
@@ -2857,12 +3043,12 @@ function updateMob(m, dt) {
     if (m.fleeT > 0) { m.fleeT -= dt; const [fx, fz] = mobDirTo(m, m.fleeX, m.fleeZ); wdx = -fx; wdz = -fz; speed = def.speed * 2.2; }
     else {
       if (m.aiT <= 0) {
-        if (Math.random() < .5) { m.moving = false; m.aiT = rnd(1.5, 5); m.graze = (m.kind !== "chicken" && Math.random() < .25) ? 1.8 : 0; }
-        else { const a = Math.random() * TAU; m.dirX = -Math.sin(a); m.dirZ = -Math.cos(a); m.moving = true; m.aiT = rnd(1.5, 4); }
+        if (Math.random() < .5) { m.moving = false; m.aiT = rnd(1.5, 5); m.graze = (m.kind !== "chicken" && m.kind !== "villager" && Math.random() < .25) ? 1.8 : 0; }
+        else { let a = Math.random() * TAU; if (m.kind === "villager" && Math.hypot(m.x - m.homeX, m.z - m.homeZ) > 14) a = Math.atan2(-(m.homeX - m.x), -(m.homeZ - m.z)) + rnd(-.6, .6); m.dirX = -Math.sin(a); m.dirZ = -Math.cos(a); m.moving = true; m.aiT = rnd(1.5, 4); }
       }
       if (m.moving) { if (ledgeAhead(m, m.dirX, m.dirZ)) { m.moving = false; m.aiT = .3; } else { wdx = m.dirX; wdz = m.dirZ; speed = def.speed; } }
     }
-    m.graze = Math.max(0, m.graze - dt);
+    m.graze = Math.max(0, m.graze - dt); m.shake = Math.max(0, m.shake - dt * 1.6);
   } else if (canTarget && dist3 < def.view && (m.kind !== "spider" || m.provoked || RS.day < .5 || (getLightPacked(Math.floor(m.x), Math.floor(m.y), Math.floor(m.z)) >> 4) < 12)) {
     const [fx, fz] = mobDirTo(m, player.x, player.z);
     m.headYaw = angLerp(m.headYaw, clamp(angLerp(m.bodyYaw, playerYawTo(m), 1) - m.bodyYaw, -1, 1), 10 * dt);
@@ -2939,7 +3125,7 @@ function renderMob(m) {
   let tint = [1, 1, 1];
   if (m.hurt > 0 && !m.dead || m.dead) { const f = m.dead ? .75 : clamp(m.hurt * 3, 0, 1); tint = [1, 1 - f * .6, 1 - f * .6]; }
   const def = MOBDEF[m.kind];
-  const anim = { t: m.t, arms: m.kind === "zombie" && !m.dead, swing: m.swing > 0 ? 1 - m.swing / .4 : 0, bow: m.kind === "skeleton" && m.bowT > 0, graze: m.graze > 0, air: !m.onGround };
+  const anim = { t: m.t, arms: m.kind === "zombie" && !m.dead, swing: m.swing > 0 ? 1 - m.swing / .4 : 0, bow: m.kind === "skeleton" && m.bowT > 0, graze: m.graze > 0, air: !m.onGround, shake: m.shake > 0 ? m.shake : 0 };
   let scale = 1, flash = false;
   if (m.kind === "creeper" && m.fuse > 0) { const s = 1 + Math.sin(m.fuse * m.fuse * 30) * .05 * m.fuse + m.fuse * .12; scale = s; flash = Math.floor(m.fuse * 12) % 2 === 0; }
   if (m.kind === "sheep") { // draw body wool slightly bigger
@@ -3634,7 +3820,7 @@ function parseBlockName(s) {
 function runCommand(line) {
   const a = line.trim().split(/\s+/), cmd = a[0].toLowerCase(), say = (m, k) => chatPrint(m, k || "sys");
   switch (cmd) {
-    case "help": say("Commands: /gamemode s|c  /time set day|night|noon|midnight  /weather clear|rain  /tp x y z  /give <item> [n]  /summon <mob>  /heal  /feed  /kill  /seed  /spawn  /setspawn  /difficulty 0-3  /clear  /fly"); break;
+    case "help": say("Commands: /gamemode s|c  /time set day|night|noon|midnight  /weather clear|rain  /tp x y z  /give <item> [n]  /summon <mob>  /heal  /feed  /kill  /seed  /spawn  /setspawn  /difficulty 0-3  /clear  /fly  /locate"); break;
     case "gamemode": case "gm": { const m = (a[1] || "").toLowerCase(); if (m[0] === "c" || m === "1") setGameMode("creative"); else if (m[0] === "s" || m === "0") setGameMode("survival"); else say("Usage: /gamemode survival|creative", "err"); break; }
     case "time": {
       if (a[1] === "set") { const v = (a[2] || "").toLowerCase(), t = { day: .06, noon: .25, sunset: .47, night: .6, midnight: .75, dawn: .96 }[v]; if (t !== undefined) { G.dayTime = t; say("Time set to " + v); } else if (!isNaN(+v)) { G.dayTime = ((+v / 24000) + .75) % 1; say("Time set"); } else say("Usage: /time set day|night|noon|midnight", "err"); }
@@ -3652,6 +3838,18 @@ function runCommand(line) {
     case "setspawn": player.spawnX = player.x; player.spawnY = player.y; player.spawnZ = player.z; say("Spawn point set"); break;
     case "difficulty": { const d = parseInt(a[1]); if (d >= 0 && d <= 3) { settings.difficulty = d; saveSettings(); say("Difficulty: " + ["Peaceful", "Easy", "Normal", "Hard"][d]); } else say("Usage: /difficulty 0-3", "err"); break; }
     case "clear": for (let i = 0; i < 36; i++) player.inv[i] = null; for (let i = 0; i < 4; i++) player.armor[i] = null; uiDirty = true; say("Inventory cleared"); break;
+    case "locate": {
+      const CELL = VILLAGE_CELL, pgx = Math.floor(player.x / CELL), pgz = Math.floor(player.z / CELL); let best = null, bd = 1e9;
+      for (let r = 0; r <= 6; r++) {
+        for (let gx = pgx - r; gx <= pgx + r; gx++) for (let gz = pgz - r; gz <= pgz + r; gz++) {
+          if (Math.max(Math.abs(gx - pgx), Math.abs(gz - pgz)) !== r) continue;
+          const pl = G.gen.villagePlan(gx, gz); if (!pl) continue; const d = Math.hypot(pl.vx - player.x, pl.vz - player.z); if (d < bd) { bd = d; best = pl; }
+        }
+        if (best && r >= 1) break;
+      }
+      if (best) say("Nearest village (" + best.kind + "): x=" + best.vx + " z=" + best.vz + "  (" + Math.round(bd) + " blocks away)  -> /tp " + best.vx + " " + (best.gy + 3) + " " + best.vz); else say("No village found within ~1300 blocks.", "err");
+      break;
+    }
     case "fly": player.flying = !player.flying; say("Flying " + (player.flying ? "on" : "off")); break;
     default: say("Unknown command. Try /help", "err");
   }
@@ -3748,6 +3946,8 @@ function playSound(name, x, y, z, vol, pitch) {
     case "sheep": { const o = AC.createOscillator(), g = AC.createGain(), l = AC.createOscillator(), lg = AC.createGain(); o.type = "sawtooth"; o.frequency.value = 300 * pt; l.frequency.value = 22; lg.gain.value = 40; l.connect(lg); lg.connect(o.frequency);
       g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.3, t + .06); g.gain.exponentialRampToValueAtTime(.001, t + .6); const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 1200; o.connect(f); f.connect(g); g.connect(out); o.start(t); l.start(t); o.stop(t + .65); l.stop(t + .65); break; }
     case "chicken": for (let i = 0; i < 3; i++) tone(out, t + i * .09, .06, "square", (900 + i * 100) * pt, 600 * pt, .18, .003, 2400); break;
+    case "villager": tone(out, t, .34, "sawtooth", 205 * pt, 150 * pt, .3, .03, 900); tone(out, t + .05, .3, "square", 410 * pt, 300 * pt, .1, .03, 1100); break;
+    case "villager_no": tone(out, t, .14, "sawtooth", 190 * pt, 160 * pt, .3, .01, 800); tone(out, t + .2, .22, "sawtooth", 170 * pt, 120 * pt, .3, .01, 800); break;
     case "zombie": tone(out, t, .9, "sawtooth", 95 * pt, 55 * pt, .4, .08, 420); noiseBurst(out, t, .6, "lowpass", 400, 200, 1, .25, .1); break;
     case "skeleton": for (let i = 0; i < 4; i++) noiseBurst(out, t + i * .06, .04, "bandpass", 3200, 0, 4, .35); break;
     case "spider": noiseBurst(out, t, .5, "highpass", 4500, 3000, 1, .3, .05); break;
@@ -4286,6 +4486,7 @@ function trySleep(x, y, z) {
 }
 function useItemOrPlace(fresh) {
   const p = player, held = heldStack(), hd = held ? IDEF[held.id] : null, t = act.target;
+  if (fresh && act.mob && act.mob.kind === "villager" && !act.mob.dead) { act.mob.shake = 1; act.mob.moving = false; act.mob.aiT = 2.5; playSound("villager_no", act.mob.x, act.mob.y + 1.4, act.mob.z, .8, rnd(.9, 1.1)); p.swing = .6; return; }
   if (t && fresh && (!p.sneak || !held)) {
     const id = t.id;
     if (id === ID.crafting_table) { openCrafting(); return; }
@@ -4747,7 +4948,7 @@ function boot() {
   G.gen = new TerrainGen(0x5eed1); G.state = "menu"; showScreen("title"); $("splash").textContent = pick(SPLASHES);
   dbOpen().then(ok => { if (!ok) console.warn("IndexedDB unavailable"); });
   G.last = performance.now(); requestAnimationFrame(frame);
-  window.BC = { DBG, autoQuality, G, player, ui, act, entities, chunks, settings, ID, IDEF, BLOCKS, getBlock, setBlock, topSolidY, spawnMob, spawnItem, runCommand, playWorld, respawn, damagePlayer, explode, breakBlock, useItemOrPlace, invAdd, openInventory, openCrafting, openFurnace, openChest, closeGui, getBE, SMELT, lookupRecipe, RS, resumeGame, openPause, giveItem, saveWorld, moveEntity, updatePlayer, updateInteraction, placeDoor, fenceMask, blockNeighborUpdate, trySleep, toggleDoor, growTree, playSound, initAudio, buildOptions, showScreen, placeBlockAt, entityBlocksCell, tickFurnace, randomTicks, trySpawnHostile, updateEntities, MOBDEF, MODELS, mouse, keys: () => keys, blockEntities, breakTime, dbListWorlds, dbDeleteWorld, hurtMob, primeTNT, getLightPacked, chunkReady, saveSettings };
+  window.BC = { DBG, TerrainGen, autoQuality, G, player, ui, act, entities, chunks, settings, ID, IDEF, BLOCKS, getBlock, setBlock, topSolidY, spawnMob, spawnItem, runCommand, playWorld, respawn, damagePlayer, explode, breakBlock, useItemOrPlace, invAdd, openInventory, openCrafting, openFurnace, openChest, closeGui, getBE, SMELT, lookupRecipe, RS, resumeGame, openPause, giveItem, saveWorld, moveEntity, updatePlayer, updateInteraction, placeDoor, fenceMask, blockNeighborUpdate, trySleep, toggleDoor, growTree, playSound, initAudio, buildOptions, showScreen, placeBlockAt, entityBlocksCell, tickFurnace, randomTicks, trySpawnHostile, updateEntities, MOBDEF, MODELS, mouse, keys: () => keys, blockEntities, breakTime, dbListWorlds, dbDeleteWorld, hurtMob, primeTNT, getLightPacked, chunkReady, saveSettings };
 }
 boot();
 

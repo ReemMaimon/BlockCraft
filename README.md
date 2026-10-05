@@ -15,7 +15,11 @@ dependencies, no image/audio assets. Open it in a modern browser (WebGL2) and pl
 * **Crafting & smelting** – 2×2 and 3×3 shaped / shapeless recipes, furnaces with fuel, chests, stairs,
   slabs, tools, armour, bow & arrows, TNT, farming (hoe → farmland → wheat → bread).
 * **Mobs** – cows, pigs, sheep, chickens, zombies, skeletons (they shoot!), creepers (they explode!),
-  spiders. Hostiles spawn in the dark (caves and night), burn in daylight, drop loot.
+  spiders, plus villagers. Hostiles spawn in the dark (caves and night), burn in daylight, drop loot.
+* **Villages** – generated deterministically in plains, forests, taiga, tundra and deserts: gravel / sandstone
+  streets with lamp posts, a stone well, wheat farms, and furnished houses (doors, glass windows, beds,
+  crafting table, furnace, torch light, loot chests) guarded by wandering villagers. `/locate` finds the nearest one.
+* **Building blocks** – ladders, fences, doors, beds (sleep through the night, sets your spawn), stairs and slabs.
 * **Creative mode** – flying (double-tap Space), instant breaking, full block palette.
 * **Saving** – worlds, edited chunks, chests, furnaces, inventory and time are stored in IndexedDB.
 * Procedural pixel-art textures, synthesized sound effects and ambient music (Web Audio).
@@ -38,7 +42,7 @@ dependencies, no image/audio assets. Open it in a modern browser (WebGL2) and pl
 | `Esc` | Pause |
 
 Handy commands: `/gamemode creative`, `/time set day`, `/give diamond_pickaxe`, `/tp x y z`,
-`/summon creeper`, `/weather rain`, `/difficulty 0-3`.
+`/summon creeper`, `/weather rain`, `/difficulty 0-3`, `/locate` (nearest village).
 
 ## Notes
 
