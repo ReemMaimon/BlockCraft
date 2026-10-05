@@ -135,7 +135,7 @@ h2.title{margin:0 0 14px;font-size:clamp(20px,3vw,30px);text-shadow:3px 3px 0 #3
   <div id="toast" class="shadow"></div>
   <div id="debug"></div>
   <div id="fps"></div>
-  <div class="ovl" id="uw"></div><div class="ovl" id="lavaov"></div><div class="ovl" id="fireov"></div><div class="ovl" id="dmg"></div>
+  <div class="ovl" id="sleep" style="transition:opacity 1.2s;z-index:3"></div><div class="ovl" id="uw"></div><div class="ovl" id="lavaov"></div><div class="ovl" id="fireov"></div><div class="ovl" id="dmg"></div>
 </div>
 <div id="chatwrap"><input id="chatinput" type="text" maxlength="200" autocomplete="off" spellcheck="false" placeholder="Type a message, or /help for commands"></div>
 
@@ -665,6 +665,43 @@ function T(name) { const i = TILES.idx[name]; if (i === undefined) throw new Err
     g.p(7, 6, [255, 245, 150]); g.p(8, 6, [255, 205, 70]); g.p(7, 7, [255, 190, 60]); g.p(8, 7, [240, 140, 30]);
   });
 
+  /* ---- building extras: ladder, doors, bed ---- */
+  defTile("ladder", g => {
+    const wood = [128, 92, 48], dark = [92, 64, 30];
+    for (let y = 0; y < 16; y++) for (const x of [2, 3, 12, 13]) g.p(x, y, x % 2 ? sc(wood, .85 + g.rng() * .2) : sc(dark, .9 + g.rng() * .2));
+    for (const y0 of [1, 5, 9, 13]) for (let x = 4; x < 12; x++) { g.p(x, y0, sc(wood, 1.05 + g.rng() * .1)); g.p(x, y0 + 1, sc(dark, 1)); }
+  });
+  const doorTiles = (w, base) => {
+    const plank = (g, top) => {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        let f = 1 + (g.n(x * 2, y, 16) - .5) * .14 + (g.rng() - .5) * .05;
+        if (x === 0 || x === 15 || (top ? y === 0 : y === 15) || (!top && y === 0 && false)) f *= .72;
+        g.p(x, y, sc(base, f));
+      }
+    };
+    defTile("door_" + w + "_top", g => {
+      plank(g, true);
+      for (const [x0, y0] of [[3, 2], [9, 2], [3, 8], [9, 8]]) { g.rect(x0, y0, 4, 5, [60, 44, 24]); g.rect(x0 + 1, y0 + 1, 2, 3, [150, 205, 235], 160); }
+      for (let x = 0; x < 16; x++) g.p(x, 15, sc(base, .8));
+    });
+    defTile("door_" + w + "_bottom", g => {
+      plank(g, false);
+      for (const [x0, y0, ww, hh] of [[2, 2, 5, 5], [9, 2, 5, 5], [2, 9, 5, 5], [9, 9, 5, 5]]) { g.rect(x0, y0, ww, hh, sc(base, .84)); for (let i = 0; i < ww; i++) { g.p(x0 + i, y0, sc(base, .66)); } for (let j = 0; j < hh; j++) g.p(x0, y0 + j, sc(base, .66)); }
+      g.rect(12, 7, 2, 2, [210, 210, 214]); g.p(13, 8, [120, 120, 126]);
+    });
+  };
+  doorTiles("oak", [157, 126, 78]); doorTiles("birch", [196, 178, 124]); doorTiles("spruce", [117, 86, 50]);
+  const red = [170, 40, 40];
+  defTile("bed_top_foot", g => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { let f = 1 + (g.n(x, y, 8) - .5) * .12 + (g.rng() - .5) * .06; if (y > 13) f *= .88; if (x === 0 || x === 15) f *= .82; g.p(x, y, sc(red, f)); } });
+  defTile("bed_top_head", g => {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { let f = 1 + (g.n(x, y, 8) - .5) * .12 + (g.rng() - .5) * .06; if (x === 0 || x === 15) f *= .82; g.p(x, y, y < 7 ? sc([236, 236, 232], f * .98) : sc(red, f)); }
+    for (let x = 1; x < 15; x++) g.p(x, 6, [196, 196, 196]);
+  });
+  const bedSide = (name, head) => defTile(name, g => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { let c; if (y < 6) c = sc(red, .9 + (g.rng() - .5) * .08); else if (y < 8) c = sc(red, .72); else c = sc([157, 126, 78], .9 + (g.rng() - .5) * .1); g.p(x, y, c); } if (head) for (let x = 0; x < 16; x++) g.p(x, 0, [226, 226, 222]); });
+  bedSide("bed_side_foot", false); bedSide("bed_side_head", true);
+  defTile("bed_end_foot", g => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) g.p(x, y, y < 6 ? sc(red, .8 + (g.rng() - .5) * .08) : (y < 8 ? sc(red, .62) : sc([157, 126, 78], .85 + (g.rng() - .5) * .1))); });
+  defTile("bed_end_head", g => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) g.p(x, y, y < 6 ? sc([226, 226, 222], .84 + (g.rng() - .5) * .06) : (y < 8 ? sc(red, .62) : sc([157, 126, 78], .85 + (g.rng() - .5) * .1))); });
+
   /* ---- liquids ---- */
   defTile("water", g => {
     for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
@@ -838,6 +875,12 @@ const SPRITES = {};   // name -> Uint8ClampedArray(1024)
   drum("raw_chicken", [240, 190, 170], [255, 225, 210], [205, 140, 120]);
   drum("cooked_chicken", [214, 150, 66], [240, 190, 100], [160, 100, 36]);
   mk("rotten_flesh", g => pal(g, ["................", "................", "....gggg........", "...ggbggggg.....", "..ggbbgggggg....", "..gggggbbggg....", "..ggggggbggg....", "...gggggggg.....", "....gggggg......"], { g: [128, 142, 80], b: [90, 76, 50] }));
+  for (const [w, col] of [["oak", [157, 126, 78]], ["birch", [196, 178, 124]], ["spruce", [117, 86, 50]]]) mk("door_" + w, g => {
+    for (let y = 1; y < 15; y++) for (let x = 4; x < 12; x++) { let f = 1 + (g.rng() - .5) * .08; if (x === 4 || y === 14) f *= .7; g.p(x, y, sc(col, f)); }
+    for (const [x0, y0] of [[5, 2], [8, 2]]) { g.rect(x0, y0, 2, 3, [70, 50, 28]); g.rect(x0, y0, 2, 2, [150, 205, 235]); }
+    for (const [x0, y0] of [[5, 8], [8, 8]]) { g.rect(x0, y0, 2, 4, sc(col, .82)); }
+    g.p(10, 8, [220, 220, 224]); outline(g);
+  });
   /* ---- gear ---- */
   mk("bow", g => {
     for (let a = -60; a <= 60; a += 6) { const x = Math.round(3 + 9 * Math.cos(a * PI / 180) * .55), y = Math.round(8 + 8 * Math.sin(a * PI / 180)); g.p(x + 1, y, [142, 100, 50]); g.p(x + 2, y, [100, 68, 30]); }
@@ -953,6 +996,16 @@ for (const [base, l] of SHAPED_BASES) {
     BLOCKS[id].tiles = bb.tiles.slice();
   }
 }
+/* ---- building extras (appended so existing save ids never shift) ---- */
+defBlock("ladder", "Ladder", { rt: R_BOX, shape: "ladder", solid: false, opaque: false, opac: 0, tex: "ladder", hard: .4, tool: "axe", snd: "wood", cat: "func", ico: "sprite", climb: true });
+for (const w of ["oak", "birch", "spruce"]) {
+  const cap = w[0].toUpperCase() + w.slice(1);
+  defBlock("fence_" + w, cap + " Fence", { rt: R_BOX, shape: "fence", opaque: false, opac: 0, tex: "planks_" + w, hard: 2, tool: "axe", snd: "wood", cat: "build" });
+  const id = defBlock("door_" + w + "_block", cap + " Door", { rt: R_BOX, shape: "door", opaque: false, opac: 0, tex: "door_" + w + "_bottom", hard: 3, tool: "axe", snd: "wood", cat: "hidden",
+    drop: meta => (meta & 8) ? [] : [["door_" + w, 1]] });
+  BLOCKS[id].topTile = T("door_" + w + "_top");
+}
+defBlock("bed", "Bed", { rt: R_BOX, shape: "bed", opaque: false, opac: 0, tex: "planks_oak", hard: .2, snd: "cloth", cat: "func", drop: meta => (meta & 4) ? [] : [["bed", 1]] });
 const LIQ_WATER = ID.water, LIQ_LAVA = ID.lava, AIR = 0;
 const isLiquid = id => id === LIQ_WATER || id === LIQ_LAVA;
 
@@ -999,6 +1052,7 @@ const FOODS = {
   raw_chicken: ["Raw Chicken", 2], cooked_chicken: ["Cooked Chicken", 6], raw_mutton: ["Raw Mutton", 2], cooked_mutton: ["Cooked Mutton", 6], rotten_flesh: ["Rotten Flesh", 4]
 };
 for (const k in FOODS) defItem(k, FOODS[k][0], { kind: "food", food: FOODS[k][1], cat: "food" });
+for (const w of ["oak", "birch", "spruce"]) defItem("door_" + w, w[0].toUpperCase() + w.slice(1) + " Door", { place: "door_" + w + "_block", cat: "func", fuelT: 10 });
 // block fuel values
 for (const w of ["oak", "birch", "spruce"]) { IDEF[ID["log_" + w]].fuelT = 15; IDEF[ID["planks_" + w]].fuelT = 15; IDEF[ID["sapling_" + w]].fuelT = 5; }
 IDEF[ID.coal_block].fuelT = 800; IDEF[ID.crafting_table].fuelT = 15; IDEF[ID.chest].fuelT = 15; IDEF[ID.bookshelf].fuelT = 15;
@@ -1008,7 +1062,8 @@ const TAGS = {
   "#planks": [ID.planks_oak, ID.planks_birch, ID.planks_spruce],
   "#logs": [ID.log_oak, ID.log_birch, ID.log_spruce],
   "#coal": [ID.coal, ID.charcoal],
-  "#sand": [ID.sand, ID.red_sand]
+  "#sand": [ID.sand, ID.red_sand],
+  "#wool": [ID.wool_white, ID.wool_orange, ID.wool_red, ID.wool_yellow, ID.wool_green, ID.wool_blue, ID.wool_purple, ID.wool_black]
 };
 const itemOf = n => { const i = ID[n]; if (i === undefined) throw new Error("unknown item " + n); return i; };
 const itemLabel = id => (IDEF[id] && IDEF[id].lbl) || "?";
@@ -1034,8 +1089,34 @@ function boxesOf(id, meta) {
     case "farmland": return CACHE_SH.farm = CACHE_SH.farm || [[0, 0, 0, 1, .9375, 1]];
     case "torch": return CACHE_SH.torch = CACHE_SH.torch || [[.4, 0, .4, .6, .65, .6]];
     case "plant": return CACHE_SH.plant = CACHE_SH.plant || [[.1, 0, .1, .9, .8, .9]];
+    case "ladder": return CACHE_SH["ld" + (meta & 3)] = CACHE_SH["ld" + (meta & 3)] || [[[.875, 0, 0, 1, 1, 1], [0, 0, 0, .125, 1, 1], [0, 0, .875, 1, 1, 1], [0, 0, 0, 1, 1, .125]][meta & 3]];
+    case "fence": {
+      const m = meta & 15, k = "fn" + m; if (CACHE_SH[k]) return CACHE_SH[k];
+      const bx = [[.375, 0, .375, .625, 1, .625]];
+      for (const [yy0, yy1] of [[.375, .5625], [.75, .9375]]) {
+        if (m & 1) bx.push([.625, yy0, .4375, 1, yy1, .5625]); if (m & 2) bx.push([0, yy0, .4375, .375, yy1, .5625]);
+        if (m & 4) bx.push([.4375, yy0, .625, .5625, yy1, 1]); if (m & 8) bx.push([.4375, yy0, 0, .5625, yy1, .375]);
+      }
+      return CACHE_SH[k] = bx;
+    }
+    case "door": {
+      const f = meta & 3, open = meta & 4, k = "dr" + f + open; if (CACHE_SH[k]) return CACHE_SH[k];
+      const closed = [[.8125, 0, 0, 1, 1, 1], [0, 0, 0, .1875, 1, 1], [0, 0, .8125, 1, 1, 1], [0, 0, 0, 1, 1, .1875]];
+      const opened = [[0, 0, 0, 1, 1, .1875], [0, 0, .8125, 1, 1, 1], [.8125, 0, 0, 1, 1, 1], [0, 0, 0, .1875, 1, 1]];
+      return CACHE_SH[k] = [(open ? opened : closed)[f]];
+    }
+    case "bed": return CACHE_SH.bed = CACHE_SH.bed || [[0, 0, 0, 1, .5625, 1]];
   }
   return FULLBOX;
+}
+function collOf(id, meta) { // collision boxes (fences are 1.5 tall)
+  const b = BLOCKS[id];
+  if (b.shape !== "fence") return boxesOf(id, meta);
+  const m = meta & 15, k = "fc" + m; if (CACHE_SH[k]) return CACHE_SH[k];
+  const bx = [[.375, 0, .375, .625, 1.5, .625]];
+  if (m & 1) bx.push([.625, 0, .4375, 1, 1.5, .5625]); if (m & 2) bx.push([0, 0, .4375, .375, 1.5, .5625]);
+  if (m & 4) bx.push([.4375, 0, .625, .5625, 1.5, 1]); if (m & 8) bx.push([.4375, 0, 0, .5625, 1.5, .375]);
+  return CACHE_SH[k] = bx;
 }
 // is this block's collision shape an actual obstacle (torch/plants are select-only)
 const COLLIDES = new Uint8Array(256);
@@ -1053,7 +1134,7 @@ function blockDrops(id, meta, canHarvest) {
   if (d === undefined) { out.push([id, b.shape === "slab" && meta === 2 ? 2 : 1]); return out; }
   if (d === null) return out;
   if (typeof d === "string") { out.push([itemOf(d), 1]); return out; }
-  const arr = d();
+  const arr = d(meta);
   for (const [n, c] of arr) out.push([itemOf(n), c]);
   return out;
 }
@@ -1139,6 +1220,12 @@ function lookupRecipe(grid, gw, gh) { // grid: array of item ids (0 = empty), ro
   shaped("stone_bricks", 4, ["SS", "SS"], { S: "stone" });
   shaped("sandstone", 1, ["SS", "SS"], { S: "#sand" });
   shaped("bookshelf", 1, ["PPP", "BBB", "PPP"], { P: "#planks", B: "leather" });
+  shaped("ladder", 3, ["S S", "SSS", "S S"], { S: "stick" });
+  shaped("bed", 1, ["WWW", "PPP"], { W: "#wool", P: "#planks" });
+  for (const w of ["oak", "birch", "spruce"]) {
+    shaped("fence_" + w, 3, ["PSP", "PSP"], { P: "planks_" + w, S: "stick" });
+    shaped("door_" + w, 3, ["PP", "PP", "PP"], { P: "planks_" + w });
+  }
   for (const [base] of SHAPED_BASES) {
     const nm = base.replace("planks_", "");
     shaped(nm + "_slab", 6, ["XXX"], { X: base }); shaped(nm + "_stairs", 4, ["X  ", "XX ", "XXX"], { X: base });
@@ -1359,7 +1446,7 @@ function setBlock(x, y, z, id, meta, noNotify) {
   if (y < 0 || y >= WH) return false;
   const c = getChunk(x >> 4, z >> 4); if (!c || c.state < 2) return false;
   const lx = x & 15, lz = z & 15, i = lx | (lz << 4) | (y << 8), old = c.blocks[i];
-  if (old === id && (!c.meta || c.meta[i] === (meta || 0))) return false;
+  if (old === id && (c.meta ? c.meta[i] : 0) === (meta || 0)) return false;
   c.blocks[i] = id; setMetaRaw(c, i, meta || 0); c.modified = true;
   const hi = lx + lz * 16;
   if (id !== 0) { if (y > c.hm[hi]) c.hm[hi] = y; }
@@ -1775,6 +1862,8 @@ function climColors(t, h) {
   if (!r) { const g = climateGrass(t / 255, h / 255), w = climateWater(t / 255, h / 255); r = [g, [g[0] * .86, g[1] * .93, g[2] * .84], w]; CLIM_CACHE.set(k, r); }
   return r;
 }
+let _bedL = null;
+function bedLayers() { return _bedL || (_bedL = { topHead: T("bed_top_head"), topFoot: T("bed_top_foot"), sideHead: T("bed_side_head"), sideFoot: T("bed_side_foot"), endHead: T("bed_end_head"), endFoot: T("bed_end_foot"), planks: T("planks_oak") }); }
 function wallDir(m) { return [null, [1, 0], [-1, 0], [0, 1], [0, -1]][m]; }
 
 function fillPadded(c) {
@@ -1863,15 +1952,28 @@ function meshChunk(c) {
       let ms = 0, mb = 0;
       for (let f = 0; f < 6; f++) { const L = pl[pi + NOFF[f]]; if ((L >> 4) > ms) ms = L >> 4; if ((L & 15) > mb) mb = L & 15; }
       FLAT_S = ms; FLAT_B = mb;
-      const boxes = boxesOf(id, meta);
+      const boxes = boxesOf(id, meta), shape = b.shape;
+      let skipFace = -1, bedHead = false, bedFacing = 0;
+      if (shape === "bed") { bedFacing = meta & 3; bedHead = !!(meta & 4); skipFace = FRONT_FACE[bedHead ? (bedFacing ^ 1) : bedFacing]; }
       for (let bi = 0; bi < boxes.length; bi++) {
         const bx = boxes[bi], x0 = bx[0] * 16, y0 = bx[1] * 16, z0 = bx[2] * 16, x1 = bx[3] * 16, y1 = bx[4] * 16, z1 = bx[5] * 16;
         for (let f = 0; f < 6; f++) {
+          if (f === skipFace) continue;
           const fd = FDEF[f], na = fd[0], edge = fd[1] > 0 ? [x1, y1, z1][na] === 16 : [x0, y0, z0][na] === 0;
           if (edge && OPAQUE[pb[pi + NOFF[f]]]) continue;
-          let layer = b.tiles[f];
+          let layer = b.tiles[f], rot = 0;
           if (b.facing && FRONT_FACE[meta & 3] === f) layer = b.front;
-          emitFace(vs, f, pi, x, y, z, x0, y0, z0, x1, y1, z1, layer, 255, 255, 255, 0, 1, 0);
+          if (shape === "door" && (meta & 8)) layer = b.topTile;
+          else if (shape === "bed") {
+            const BL = bedLayers();
+            if (f === 2) { layer = bedHead ? BL.topHead : BL.topFoot; rot = [3, 1, 2, 0][bedFacing]; }
+            else if (f === 3) layer = BL.planks;
+            else {
+              const headEnd = FRONT_FACE[bedFacing], footEnd = FRONT_FACE[bedFacing ^ 1];
+              if (f === headEnd) layer = BL.endHead; else if (f === footEnd) layer = BL.endFoot; else layer = bedHead ? BL.sideHead : BL.sideFoot;
+            }
+          }
+          emitFace(vs, f, pi, x, y, z, x0, y0, z0, x1, y1, z1, layer, 255, 255, 255, 0, 1, rot);
         }
       }
     }
@@ -2236,7 +2338,7 @@ function gatherBoxes(x0, y0, z0, x1, y1, z1) {
     const c = getChunk(x >> 4, z >> 4); if (!c) continue;
     for (let y = iy0; y <= iy1; y++) {
       const i = (x & 15) | ((z & 15) << 4) | (y << 8), id = c.blocks[i]; if (!COLLIDES[id] || _nb > 780) continue;
-      const bs = BLOCKS[id].shape === "cube" ? FULLBOX : boxesOf(id, c.meta ? c.meta[i] : 0);
+      const bs = BLOCKS[id].shape === "cube" ? FULLBOX : collOf(id, c.meta ? c.meta[i] : 0);
       for (let k = 0; k < bs.length; k++) { const b = bs[k], o = _nb * 6; _bx[o] = x + b[0]; _bx[o + 1] = y + b[1]; _bx[o + 2] = z + b[2]; _bx[o + 3] = x + b[3]; _bx[o + 4] = y + b[4]; _bx[o + 5] = z + b[5]; _nb++; }
     }
   }
@@ -3183,6 +3285,13 @@ function getIcon(id) {
     } else if (bd.rt === R_BOX && (bd.shape === "slab" || bd.shape === "stairs")) {
       const boxes = bd.shape === "slab" ? [[0, 0, 0, 1, .5, 1]] : [[0, 0, 0, 1, .5, 1], [0, .5, .5, 1, 1, 1]];
       for (const b of boxes) isoBox(ctx, bd, b);
+    } else if (bd.shape === "fence") {
+      for (const b of [[.375, 0, .375, .625, 1, .625], [.625, .375, .4375, 1, .5625, .5625], [.625, .75, .4375, 1, .9375, .5625], [0, .375, .4375, .375, .5625, .5625], [0, .75, .4375, .375, .9375, .5625]]) isoBox(ctx, bd, b);
+    } else if (bd.shape === "bed") {
+      const pseudo = { tiles: [T("bed_side_head"), T("bed_side_head"), T("bed_top_head"), T("planks_oak"), T("bed_end_foot"), T("bed_end_foot")], tint: "", tmode: 0, facing: false, front: -1 };
+      isoBox(ctx, pseudo, [0, 0, 0, 1, .5625, 1]);
+    } else if (bd.shape === "door") {
+      ctx.drawImage(tileCanvas(bd.tiles[2], null), 14, 4, 36, 56);
     } else if (bd.rt === R_BOX) {
       for (const b of boxesOf(id, 0)) isoBox(ctx, bd, b);
     } else isoBox(ctx, bd, [0, 0, 0, 1, 1, 1]);
@@ -3844,8 +3953,24 @@ function breakAndDrop(x, y, z) {
   for (const [iid, n] of blockDrops(id, getMeta(x, y, z), true)) spawnItem({ id: iid, n }, x + .5, y + .4, z + .5);
   spawnBlockParticles(x, y, z, id, 6); setBlock(x, y, z, 0, 0);
 }
+const LADDER_DIR = [[1, 0], [-1, 0], [0, 1], [0, -1]];   // ladder meta -> direction of its supporting wall
+function fenceConnects(id) { if (!id) return false; const b = BLOCKS[id]; return b.shape === "fence" || (b.rt === R_CUBE && b.opaque); }
+function fenceMask(x, y, z) { return (fenceConnects(getBlock(x + 1, y, z)) ? 1 : 0) | (fenceConnects(getBlock(x - 1, y, z)) ? 2 : 0) | (fenceConnects(getBlock(x, y, z + 1)) ? 4 : 0) | (fenceConnects(getBlock(x, y, z - 1)) ? 8 : 0); }
+function freeCell(x, y, z) { const b = getBlock(x, y, z); return y >= 0 && y < WH && (!b || BLOCKS[b].repl); }
 function blockNeighborUpdate(x, y, z) {
   const id = getBlock(x, y, z); if (!id) return; const bd = BLOCKS[id];
+  if (bd.shape === "fence") { const m = fenceMask(x, y, z); if (m !== getMeta(x, y, z)) setBlock(x, y, z, id, m, true); return; }
+  if (bd.shape === "ladder") { const d = LADDER_DIR[getMeta(x, y, z) & 3], sup = getBlock(x + d[0], y, z + d[1]); if (!sup || !OPAQUE[sup]) breakAndDrop(x, y, z); return; }
+  if (bd.shape === "door") {
+    const m = getMeta(x, y, z);
+    if (m & 8) { if (getBlock(x, y - 1, z) !== id) setBlock(x, y, z, 0, 0, true); }
+    else if (getBlock(x, y + 1, z) !== id || !COLLIDES[getBlock(x, y - 1, z)]) breakAndDrop(x, y, z);
+    return;
+  }
+  if (bd.shape === "bed") {
+    const m = getMeta(x, y, z), dir = LADDER_DIR[(m & 3) ^ ((m & 4) ? 1 : 0)];   // direction towards the partner half
+    if (getBlock(x + dir[0], y, z + dir[1]) !== id) breakAndDrop(x, y, z); return;
+  }
   if (bd.fall) checkFall(x, y, z);
   else if (id === ID.torch) { if (!torchSupported(x, y, z)) breakAndDrop(x, y, z); }
   else if (bd.shape === "plant" || id === ID.cactus) { if (!plantSupported(id, getBlock(x, y - 1, z))) breakAndDrop(x, y, z); }
@@ -3855,6 +3980,7 @@ function installHooks() {
   onBlockChanged = (x, y, z, old, nw) => {
     for (let d = 0; d < 6; d++) blockNeighborUpdate(x + LDX[d], y + LDY[d], z + LDZ[d]);
     if (nw && BLOCKS[nw].fall) checkFall(x, y, z);
+    if (nw && BLOCKS[nw].shape === "fence") blockNeighborUpdate(x, y, z);
     if (old === ID.furnace || old === ID.furnace_lit) { if (nw !== ID.furnace && nw !== ID.furnace_lit) { const be = getBE(x, y, z, false); if (be) spillBE(be); } }
     else if (old === ID.chest && nw !== ID.chest) { const be = getBE(x, y, z, false); if (be) spillBE(be); }
   };
@@ -3951,7 +4077,7 @@ function updatePlayer(dt) {
   if (!chunkReady(Math.floor(p.x), Math.floor(p.z))) return;
   if (G.spawnPending) { const t = topSolidY(Math.floor(p.x), Math.floor(p.z)); if (t >= 0) { p.y = t + 1.01; G.spawnPending = false; } }
   p.invuln = Math.max(0, p.invuln - dt); p.hurtT = Math.max(0, p.hurtT - dt); p.atkCD = Math.max(0, (p.atkCD || 0) - dt); p.swing = Math.max(0, p.swing - dt * 3.2);
-  const creative = p.mode === "creative", canInput = G.locked && !ui.screen && !ui.chatOpen;
+  const creative = p.mode === "creative", canInput = G.locked && !ui.screen && !ui.chatOpen && !G.sleeping;
   let f = 0, s = 0;
   if (canInput) { if (keys.KeyW) f += 1; if (keys.KeyS) f -= 1; if (keys.KeyD) s += 1; if (keys.KeyA) s -= 1; }
   const sn = Math.sin(p.yaw), cs = Math.cos(p.yaw);
@@ -3981,6 +4107,12 @@ function updatePlayer(dt) {
   } else {
     p.vy = Math.max(-TERMINAL, p.vy - GRAVITY * dt);
     if (spaceDown && p.onGround) { p.vy = 9.0; p.onGround = false; addExhaustion(p.sprint ? .2 : .05); if (p.sprint) { p.vx += wx * 1.6; p.vz += wz * 1.6; } }
+  }
+  if (!p.flying && !inW && !inL) {   // ladders
+    const lb = getBlock(Math.floor(p.x), Math.floor(p.y + .3), Math.floor(p.z)), lb2 = getBlock(Math.floor(p.x), Math.floor(p.y + 1.2), Math.floor(p.z));
+    if ((lb && BLOCKS[lb].climb) || (lb2 && BLOCKS[lb2].climb)) {
+      p.vx *= .6; p.vz *= .6; p.vy = (f > 0 || spaceDown) ? 3.4 : (p.sneak ? 0 : -3); p.peakY = p.y; p.onLadder = true;
+    } else p.onLadder = false;
   }
   let dx = p.vx * dt, dz = p.vz * dt;
   if (p.sneak && p.onGround && !p.flying) {
@@ -4101,7 +4233,12 @@ function placeBlockAt(t, held) {
     return false;
   }
   let meta = 0;
-  if (held.id === ID.torch) {
+  if (bd.shape === "bed") return placeBed(px, py, pz, held);
+  if (held.id === ID.ladder) {
+    if (t.face === 2 || t.face === 3 || !tb.opaque) return false;
+    meta = { 0: 1, 1: 0, 4: 3, 5: 2 }[t.face];
+  } else if (bd.shape === "fence") meta = fenceMask(px, py, pz);
+  else if (held.id === ID.torch) {
     if (t.face === 3) return false;
     if (t.face === 2) meta = 0; else meta = { 0: 2, 1: 1, 4: 4, 5: 3 }[t.face];
     if (!tb.opaque && t.face !== 2) return false; if (t.face === 2 && (!COLLIDES[t.id] || isLiquid(t.id))) return false;
@@ -4115,6 +4252,38 @@ function placeBlockAt(t, held) {
   if (!setBlock(px, py, pz, held.id, meta)) return false;
   consumeHeld(1); playSound("place_" + bd.snd, px + .5, py + .5, pz + .5, .9, rnd(.9, 1.05)); player.swing = 1; return true;
 }
+function placeBed(px, py, pz, held) {
+  const f = facingFromYaw(false), d = LADDER_DIR[f], hx = px + d[0], hz = pz + d[1];
+  if (!freeCell(hx, py, hz) || !COLLIDES[getBlock(px, py - 1, pz)] || !COLLIDES[getBlock(hx, py - 1, hz)]) return false;
+  if (entityBlocksCell(px, py, pz, BLOCKS[ID.bed], f) || entityBlocksCell(hx, py, hz, BLOCKS[ID.bed], f | 4)) return false;
+  setBlock(px, py, pz, ID.bed, f, true); setBlock(hx, py, hz, ID.bed, f | 4);
+  consumeHeld(1); playSound("place_cloth", px, py, pz, .9, 1); player.swing = 1; return true;
+}
+function placeDoor(t, held, doorId) {
+  let px = t.x, py = t.y, pz = t.z;
+  if (!BLOCKS[t.id].repl) { const n = FNORM[t.face]; px += n[0]; py += n[1]; pz += n[2]; }
+  if (!freeCell(px, py, pz) || !freeCell(px, py + 1, pz) || !COLLIDES[getBlock(px, py - 1, pz)] || isLiquid(getBlock(px, py - 1, pz))) return false;
+  const f = facingFromYaw(true);
+  if (entityBlocksCell(px, py, pz, BLOCKS[doorId], f) || entityBlocksCell(px, py + 1, pz, BLOCKS[doorId], f | 8)) return false;
+  setBlock(px, py, pz, doorId, f, true); setBlock(px, py + 1, pz, doorId, f | 8);
+  consumeHeld(1); playSound("place_wood", px, py, pz, .9, 1); player.swing = 1; return true;
+}
+function toggleDoor(x, y, z) {
+  const id = getBlock(x, y, z), m = getMeta(x, y, z), ly = (m & 8) ? y - 1 : y, lm = getMeta(x, ly, z) ^ 4;
+  setBlock(x, ly, z, id, lm, true); setBlock(x, ly + 1, z, id, lm | 8, true);
+  playSound("place_wood", x, ly, z, .8, (lm & 4) ? 1.15 : .9); player.swing = .8;
+}
+function hostileNear(r) { for (const e of entities) if (e.type === "mob" && !e.dead && MOBDEF[e.kind].cat === "hostile" && Math.hypot(e.x - player.x, e.z - player.z) < r && Math.abs(e.y - player.y) < 6) return true; return false; }
+function trySleep(x, y, z) {
+  if (G.sleeping) return;
+  if (RS.day > .32 && G.rain < .6) { toast("You can only sleep at night or during a storm"); return; }
+  if (hostileNear(12)) { toast("You may not rest now, there are monsters nearby"); return; }
+  G.sleeping = true; player.spawnX = x + .5; player.spawnY = y + .6; player.spawnZ = z + .5; $("sleep").style.opacity = 1;
+  setTimeout(() => {
+    if (G.dayTime > .4) G.days++; G.dayTime = .015; G.rainTarget = 0; G.rain = 0; G.weatherT = rnd(300, 700); player.health = Math.min(player.maxHealth, player.health + 0);
+    $("sleep").style.opacity = 0; G.sleeping = false; toast("Good morning! Your spawn point has been set."); playSound("levelup", undefined, undefined, undefined, .4, 1.3);
+  }, 1500);
+}
 function useItemOrPlace(fresh) {
   const p = player, held = heldStack(), hd = held ? IDEF[held.id] : null, t = act.target;
   if (t && fresh && (!p.sneak || !held)) {
@@ -4122,6 +4291,8 @@ function useItemOrPlace(fresh) {
     if (id === ID.crafting_table) { openCrafting(); return; }
     if (id === ID.furnace || id === ID.furnace_lit) { openFurnace(getBE(t.x, t.y, t.z, true)); return; }
     if (id === ID.chest) { if (!OPAQUE[getBlock(t.x, t.y + 1, t.z)]) { openChest(getBE(t.x, t.y, t.z, true)); return; } }
+    if (BLOCKS[id].shape === "door") { toggleDoor(t.x, t.y, t.z); return; }
+    if (id === ID.bed) { trySleep(t.x, t.y, t.z); return; }
     if (id === ID.tnt && held && held.id === ID.flint_and_steel) { setBlock(t.x, t.y, t.z, 0, 0); primeTNT(t.x, t.y, t.z); wearHeld(1); return; }
   }
   if (!held) return;
@@ -4132,6 +4303,7 @@ function useItemOrPlace(fresh) {
     }
     return;
   }
+  if (hd.place && t && BLOCKS[ID[hd.place]] && BLOCKS[ID[hd.place]].shape === "door") { if (fresh) placeDoor(t, held, ID[hd.place]); return; }
   if (hd.place === "wheat_crop" && t) {
     if (t.id === ID.farmland && t.face === 2 && !getBlock(t.x, t.y + 1, t.z)) { setBlock(t.x, t.y + 1, t.z, ID.wheat_crop, 0); consumeHeld(1); playSound("place_grass", t.x, t.y, t.z, .8, 1); p.swing = 1; }
     return;
@@ -4140,7 +4312,7 @@ function useItemOrPlace(fresh) {
 }
 function updateInteraction(dt) {
   const p = player;
-  if (p.dead || !G.locked || ui.screen || ui.chatOpen) { stopMining(); p.usingItem = false; if (!G.locked) p.eatT = p.drawT = 0; return; }
+  if (p.dead || !G.locked || ui.screen || ui.chatOpen || G.sleeping) { stopMining(); p.usingItem = false; if (!G.locked) p.eatT = p.drawT = 0; return; }
   updateTarget();
   const held = heldStack(), hd = held ? IDEF[held.id] : null;
   // left button: attack or mine
@@ -4575,7 +4747,7 @@ function boot() {
   G.gen = new TerrainGen(0x5eed1); G.state = "menu"; showScreen("title"); $("splash").textContent = pick(SPLASHES);
   dbOpen().then(ok => { if (!ok) console.warn("IndexedDB unavailable"); });
   G.last = performance.now(); requestAnimationFrame(frame);
-  window.BC = { DBG, autoQuality, G, player, ui, act, entities, chunks, settings, ID, IDEF, BLOCKS, getBlock, setBlock, topSolidY, spawnMob, spawnItem, runCommand, playWorld, respawn, damagePlayer, explode, breakBlock, useItemOrPlace, invAdd, openInventory, openCrafting, openFurnace, openChest, closeGui, getBE, SMELT, lookupRecipe, RS, resumeGame, openPause, giveItem, saveWorld, growTree, playSound, initAudio, buildOptions, showScreen, placeBlockAt, entityBlocksCell, tickFurnace, randomTicks, trySpawnHostile, updateEntities, MOBDEF, MODELS, mouse, keys: () => keys, blockEntities, breakTime, dbListWorlds, dbDeleteWorld, hurtMob, primeTNT, getLightPacked, chunkReady, saveSettings };
+  window.BC = { DBG, autoQuality, G, player, ui, act, entities, chunks, settings, ID, IDEF, BLOCKS, getBlock, setBlock, topSolidY, spawnMob, spawnItem, runCommand, playWorld, respawn, damagePlayer, explode, breakBlock, useItemOrPlace, invAdd, openInventory, openCrafting, openFurnace, openChest, closeGui, getBE, SMELT, lookupRecipe, RS, resumeGame, openPause, giveItem, saveWorld, moveEntity, updatePlayer, updateInteraction, placeDoor, fenceMask, blockNeighborUpdate, trySleep, toggleDoor, growTree, playSound, initAudio, buildOptions, showScreen, placeBlockAt, entityBlocksCell, tickFurnace, randomTicks, trySpawnHostile, updateEntities, MOBDEF, MODELS, mouse, keys: () => keys, blockEntities, breakTime, dbListWorlds, dbDeleteWorld, hurtMob, primeTNT, getLightPacked, chunkReady, saveSettings };
 }
 boot();
 
